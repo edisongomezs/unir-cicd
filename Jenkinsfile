@@ -2,151 +2,69 @@ pipeline {
     agent {
         label 'docker'
     }
-
-    options {
-        timeout(time: 1, unit: 'HOURS')
-    }
-
-    triggers {
-        cron('H */1 * * 1-5')
-        pollSCM('H/10 * * * 1-5')
-    }
-
-    environment {
-        AN_ACCESS_KEY = credentials('my-predefined-secret-text')
-        PULL_REQUEST = "pr-${env.CHANGE_ID}"
-        IMAGE_TAG = "${env.PULL_REQUEST}"
-    }
-
     stages {
-        stage('Summary') {
+        stage('Source') {
             steps {
-                sh script: """
-                    echo "GIT_BRANCH: ${GIT_BRANCH}"
-                    echo "PULL_REQUEST: ${PULL_REQUEST}"
-                """, label: "Details summary"
+                git url: 'https://github.com/srayuso/unir-cicd.git', credentialsId: 'git-credentials-id'
             }
         }
-
-        stage('Static Analysis') {
-            parallel {
-                stage('Linting') {
-                    agent {
-                        dockerfile {
-                            filename 'Dockerfile.custom'
-                            dir 'ci'
-                            label 'docker'
-                        }
-                    }
-                    steps {
-                        script {
-                            sh "<run lint>"
-                        }
-                    }
-                }
-                stage('DevSecOps Static'){
-                    steps {
-                        echo "<run devsecops tests>"
-                    }
-                }
-            }
-        }
-
         stage('Build') {
-            agent {
-                docker {
-                    image 'node:15.1.0-alpine3.10'
-                    label 'docker'
-                }
-            }
             steps {
-                sh "npm install"
-                sh "npm run build"
-                stash name: "DIST", includes: "dist/**"
-                stash name: "NODE_MODULES", includes: "node_modules/**"
-                archiveArtifacts artifacts: 'dist/**'
+                echo 'Building stage!'
+                bat 'make build'
             }
         }
-
-
-        stage('Test') {
-            parallel {
-                stage('Unit Tests') {
-                    steps {
-                        unstash name: "NODE_MODULES"
-                        sh "npm run test:unit"
-                        junit 'tests/unit/reports/*.xml'
-                    }
-                }
-
-                stage('Browser Tests') {
-                    steps {
-                        unstash name: "DIST"
-                        unstash name: "NODE_MODULES"
-                        sh "npm run test:cypress"
-                        junit 'tests/cypress/reports/*.xml'
-                    }
-                }
-            }
-        }
-
-        stage('Deploy') {
-            agent {
-                label "kubernetes"
-            }
-            when { 
-                beforeAgent true
-                allOf {
-                    equals expected: 'master', actual: BRANCH_NAME
-                    equals expected: 'SUCCESS', actual: currentBuild.currentResult
-                }
-            }
+        stage('Unit tests') {
             steps {
-                unstash name: "DIST"
-                sh "docker build -t app:${env.GIT_COMMIT} ."
-                sh "docker push app:${env.GIT_COMMIT}"
-                script {
-                    withCredentials([file(credentialsId: "K8S_CREDENTIALS", variable: 'KUBECTL_CONFIG_FILE')]) {
-                        sh "kubectl apply --kubeconfig ${KUBECTL_CONFIG_FILE} -f deploy/template.yaml"
-                    }
-                }
+                bat 'make test-unit'
+                archiveArtifacts artifacts: 'results/unit_result.xml'
             }
         }
-
-        stage('DevSecOps Deploy'){
+        stage('API tests') {
             steps {
-                echo "<run devsecops tests>"
+                echo 'Running API tests!'
+                bat 'make test-api'
+                archiveArtifacts artifacts: 'results/api_result.xml'
             }
         }
-
-        stage('Integration tests') {
-            when { 
-                beforeAgent true
-                allOf {
-                    equals expected: 'master', actual: BRANCH_NAME
-                    equals expected: 'SUCCESS', actual: currentBuild.currentResult
-                }
-            }
+        stage('E2E tests') {
             steps {
-                sh "<run int tests>"
-                junit 'tests/integration/reports/*.xml'
+                echo 'Running E2E tests!'
+                bat 'make test-e2e'
+                archiveArtifacts artifacts: 'results/e2e/*.xml'
             }
         }
-
     }
-
     post {
-        success {
-            emailext subject: "Pipeline successful", to: "devs@unir.net"
-            cleanWs()
-        }
-        unstable {
-            emailext subject: "Pipeline tests not successful", to: "devs@unir.net"
+        always {
+            junit 'results/**/*.xml'
             cleanWs()
         }
         failure {
-            emailext subject: "Pipeline error", to: "devops@unir.net,devs@unir.net"
-            cleanWs()
+            script {
+                def jobName = env.JOB_NAME
+                def buildNumber = env.BUILD_NUMBER
+                echo "Sending email notification for job ${jobName} build ${buildNumber}"
+                emailext (
+                    subject: "Pipeline error",
+                    to: "edisonjaviergomezs@gmail.com,devs@unir.net",
+                    body: "The job ${jobName} build ${buildNumber} has failed. Please check the Jenkins console for more details."
+                )
+            }
+        }
+        success {
+            emailext (
+                subject: "Pipeline successful",
+                to: "devs@unir.net",
+                body: "The pipeline has completed successfully. Great job!"
+            )
+        }
+        unstable {
+            emailext (
+                subject: "Pipeline tests not successful",
+                to: "devs@unir.net",
+                body: "The pipeline has completed but some tests have failed. Please check the Jenkins console for more details."
+            )
         }
     }
 }
