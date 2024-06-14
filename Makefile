@@ -25,12 +25,12 @@ test-api:
 
 test-e2e:
 	docker network create calc-test-e2e || true
-	docker stop apiserver || true
-	docker rm --force apiserver || true
-	docker stop calc-web || true
-	docker rm --force calc-web || true
-	docker stop e2e-tests || true
-	docker rm --force e2e-tests || true
+	-@docker stop apiserver || true
+	-@docker rm --force apiserver || true
+	-@docker stop calc-web || true
+	-@docker rm --force calc-web || true
+	-@docker stop e2e-tests || true
+	-@docker rm --force e2e-tests || true
 	docker run -d --network calc-test-e2e --env PYTHONPATH=/opt/calc --name apiserver --env FLASK_APP=app/api.py -p 5000:5000 -w /opt/calc calculator-app:latest flask run --host=0.0.0.0
 	docker run -d --network calc-test-e2e --name calc-web -p 80:80 calc-web
 	docker create --network calc-test-e2e --name e2e-tests cypress/included:4.9.0 --browser chrome || true
@@ -49,7 +49,6 @@ run-web:
 stop-web:
 	docker stop calc-web
 
-
 start-sonar-server:
 	docker network create calc-sonar || true
 	docker run -d --rm --stop-timeout 60 --network calc-sonar --name sonarqube-server -p 9000:9000 --volume `pwd`/sonar/data:/opt/sonarqube/data --volume `pwd`/sonar/logs:/opt/sonarqube/logs sonarqube:8.3.1-community
@@ -63,7 +62,6 @@ start-sonar-scanner:
 
 pylint:
 	docker run --rm --volume `pwd`:/opt/calc --env PYTHONPATH=/opt/calc -w /opt/calc calculator-app:latest pylint app/ | tee results/pylint_result.txt
-
 
 deploy-stage:
 	docker stop apiserver || true
