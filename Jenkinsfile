@@ -5,66 +5,48 @@ pipeline {
     stages {
         stage('Source') {
             steps {
-                git url: 'https://github.com/srayuso/unir-cicd.git', credentialsId: 'git-credentials-id'
+                git 'https://github.com/edisongomezs/unir-cicd.git'
             }
         }
         stage('Build') {
             steps {
                 echo 'Building stage!'
-                bat 'make build'
+                sh 'make build'
             }
         }
         stage('Unit tests') {
             steps {
-                bat 'make test-unit'
-                archiveArtifacts artifacts: 'results/unit_result.xml'
+                sh 'make test-unit'
+                archiveArtifacts artifacts: 'results/*.xml'
             }
         }
         stage('API tests') {
             steps {
                 echo 'Running API tests!'
-                bat 'make test-api'
-                archiveArtifacts artifacts: 'results/api_result.xml'
+                sh 'make test-api'
+                archiveArtifacts artifacts: 'results/api/*.xml'
             }
         }
         stage('E2E tests') {
             steps {
                 echo 'Running E2E tests!'
-                bat 'make test-e2e'
+                sh 'make test-e2e'
                 archiveArtifacts artifacts: 'results/e2e/*.xml'
             }
         }
     }
     post {
         always {
-            junit 'results/**/*.xml'
+            junit 'results/*_result.xml'
             cleanWs()
         }
         failure {
             script {
                 def jobName = env.JOB_NAME
                 def buildNumber = env.BUILD_NUMBER
-                echo "Sending email notification for job ${jobName} build ${buildNumber}"
-                emailext (
-                    subject: "Pipeline error",
-                    to: "edisonjaviergomezs@gmail.com,devs@unir.net",
-                    body: "The job ${jobName} build ${buildNumber} has failed. Please check the Jenkins console for more details."
-                )
+                echo "Sending email notification for failed job: ${jobName} #${buildNumber}"
+                // mail to: 'your-email@example.com', subject: "Job '${jobName} [#${buildNumber}]' failed", body: "The job ${jobName} with build number ${buildNumber} has failed."
             }
-        }
-        success {
-            emailext (
-                subject: "Pipeline successful",
-                to: "devs@unir.net",
-                body: "The pipeline has completed successfully. Great job!"
-            )
-        }
-        unstable {
-            emailext (
-                subject: "Pipeline tests not successful",
-                to: "devs@unir.net",
-                body: "The pipeline has completed but some tests have failed. Please check the Jenkins console for more details."
-            )
         }
     }
 }
